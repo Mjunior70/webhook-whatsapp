@@ -38,6 +38,7 @@ app.post('/webhook', async (req, res) => {
     if (message?.text?.body) {
       const userMessage = message.text.body;
       const from = message.from;
+      console.log("Número recebido:", from);
 
       console.log("Mensagem recebida:", userMessage);
 
