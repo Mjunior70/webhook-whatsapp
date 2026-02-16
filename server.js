@@ -1,16 +1,23 @@
 const express = require('express');
-const app = express();
+const axios = require('axios');
+const OpenAI = require('openai');
 
+const app = express();
 app.use(express.json());
 
-const VERIFY_TOKEN = "iplan123"; // coloque o mesmo token usado na Meta
+const VERIFY_TOKEN = "iplan123";
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// 🔹 Rota principal só para teste
-app.get('/', (req, res) => {
-  res.send('Webhook WhatsApp está online 🚀');
+const openai = new OpenAI({
+  apiKey: OPENAI_API_KEY,
 });
 
-// 🔹 Verificação do webhook (Meta chama isso uma vez)
+app.get('/', (req, res) => {
+  res.send('Webhook WhatsApp + OpenAI 🚀');
+});
+
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -24,15 +31,53 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// 🔹 Receber mensagens do WhatsApp
-app.post('/webhook', (req, res) => {
-  console.log("📩 Evento recebido:");
-  console.log(JSON.stringify(req.body, null, 2));
-  res.sendStatus(200);
+app.post('/webhook', async (req, res) => {
+  try {
+    const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    
+    if (message?.text?.body) {
+      const userMessage = message.text.body;
+      const from = message.from;
+
+      console.log("Mensagem recebida:", userMessage);
+
+      // 🔥 Enviar para OpenAI
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "Você é um assistente profissional e objetivo." },
+          { role: "user", content: userMessage }
+        ],
+      });
+
+      const aiResponse = completion.choices[0].message.content;
+
+      // 🔥 Enviar resposta para WhatsApp
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+        {
+          messaging_product: "whatsapp",
+          to: from,
+          type: "text",
+          text: { body: aiResponse }
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+    }
+
+    res.sendStatus(200);
+  } catch (error) {
+    console.error(error.response?.data || error.message);
+    res.sendStatus(500);
+  }
 });
 
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
